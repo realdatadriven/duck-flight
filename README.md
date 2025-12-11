@@ -98,7 +98,7 @@ duckdb -c "INSTALL tpch; LOAD tpch; CALL dbgen(sf=1); ATTACH 'database/test.db' 
 ### 3. Run Duck-Flight
 
 ```bash
-go run ./cmd/duckflight --config config.yaml
+go run ./cmd/duckflight -tags="duckdb_arrow" --config config.yaml
 ```
 
 ### 4. Connect from DuckDB
