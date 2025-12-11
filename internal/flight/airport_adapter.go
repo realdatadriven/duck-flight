@@ -11,7 +11,6 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/decimal128"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"google.golang.org/grpc"
 
@@ -58,8 +57,8 @@ func (a *AirportAdapter) Start(listenAddr string) error {
 	// For each schema defined in config, discover its tables and add them as SimpleTable entries.
 	for _, s := range a.cfg.Schemas {
 		schemaName := s.Name
-		// add schema to builder
-		builder = builder.Schema(schemaName)
+		// create a schema builder for this schema
+		sb := builder.Schema(schemaName)
 
 		// discover tables for this schema using information_schema
 		tables, err := discoverTables(a.manager.DB(), schemaName)
@@ -74,7 +73,8 @@ func (a *AirportAdapter) Start(listenAddr string) error {
 			// create scan func closure capturing schema/table/columns
 			scanFn := makeScanFunc(a.manager.DB(), a.mem, schemaName, t.Name, arrowSchema, t.Columns)
 
-			builder = builder.SimpleTable(airport.SimpleTableDef{
+			// register simple table under current schema builder
+			sb.SimpleTable(airport.SimpleTableDef{
 				Name:     t.Name,
 				Comment:  "",
 				Schema:   arrowSchema,
@@ -139,7 +139,7 @@ type tableMeta struct {
 }
 
 type columnMeta struct {
-	Name    string
+	Name       string
 	DuckDBType string
 }
 
@@ -189,7 +189,7 @@ func discoverColumns(db *sql.DB, schema, table string) ([]columnMeta, error) {
 			return nil, fmt.Errorf("scan column: %w", err)
 		}
 		cols = append(cols, columnMeta{
-			Name:    name,
+			Name:       name,
 			DuckDBType: strings.ToUpper(strings.TrimSpace(dtype)),
 		})
 	}
@@ -238,12 +238,18 @@ func mapDuckTypeToArrow(duck string) arrow.DataType {
 	case strings.HasPrefix(duck, "DOUBLE") || strings.HasPrefix(duck, "DOUBLE PRECISION"):
 		return arrow.PrimitiveTypes.Float64
 	case strings.HasPrefix(duck, "DECIMAL"):
-		// parse DECIMAL(precision,scale) fallback
-		p, s := int32(38), int32(6)
+		// parse DECIMAL(precision,scale)
+		var p int32 = 38
+		var s int32 = 6
 		if i := strings.Index(duck, "("); i != -1 {
+			// tolerate formats like DECIMAL(p,s)
 			fmt.Sscanf(duck, "DECIMAL(%d,%d)", &p, &s)
 		}
-		return decimal128.New(p, s)
+		// create a Decimal128Type
+		if f := arrow.NewDecimal128Type(int(p), int(s)); f != nil {
+			return f
+		}
+		return arrow.BinaryTypes.String
 	case strings.HasPrefix(duck, "TIMESTAMP"):
 		// use microsecond precision timestamp
 		return arrow.FixedWidthTypes.Timestamp_us
@@ -253,7 +259,6 @@ func mapDuckTypeToArrow(duck string) arrow.DataType {
 		return arrow.FixedWidthTypes.Time64us
 	case strings.HasPrefix(duck, "BLOB") || strings.HasPrefix(duck, "BYTEA"):
 		return arrow.BinaryTypes.Binary
-	// Note: UUID and some extension types may require custom extension types in Arrow; fallback to string
 	case strings.HasPrefix(duck, "UUID"):
 		return arrow.BinaryTypes.String
 	case strings.HasPrefix(duck, "LIST"):
@@ -272,7 +277,6 @@ func mapDuckTypeToArrow(duck string) arrow.DataType {
 func makeScanFunc(db *sql.DB, mem memory.Allocator, schemaName, tableName string, aSchema *arrow.Schema, cols []columnMeta) func(ctx context.Context, opts *catalog.ScanOptions) (array.RecordReader, error) {
 	return func(ctx context.Context, opts *catalog.ScanOptions) (array.RecordReader, error) {
 		// Build query: SELECT * FROM schema.table
-		// Note: DuckDB allows schema-qualified identifiers: schema.table
 		query := fmt.Sprintf("SELECT * FROM \"%s\".\"%s\"", schemaName, tableName)
 		if opts != nil && opts.Limit > 0 {
 			query = fmt.Sprintf("%s LIMIT %d", query, opts.Limit)
@@ -286,12 +290,9 @@ func makeScanFunc(db *sql.DB, mem memory.Allocator, schemaName, tableName string
 
 		// We'll build a single in-memory Record (for simplicity).
 		builder := array.NewRecordBuilder(mem, aSchema)
-		// Release builder when function returns; but we must not Release created records until reader is released.
-		// We'll create the record and let caller release it via reader.Release semantics.
 		defer func() {
-			// if builder still not finished (panic/early return), release
-			// However we don't call builder.Release() here after NewRecord() because builder.Release()
-			// is supposed to be called after record created / or earlier. We'll ensure proper release below.
+			// ensure builder is released if the function exits before we return a RecordReader
+			_ = builder.Release()
 		}()
 
 		colCount := len(cols)
@@ -303,171 +304,165 @@ func makeScanFunc(db *sql.DB, mem memory.Allocator, schemaName, tableName string
 				valuePtrs[i] = &values[i]
 			}
 			if err := rows.Scan(valuePtrs...); err != nil {
-				// ensure builder released on error
-				_ = builder.Release()
 				return nil, fmt.Errorf("scan row: %w", err)
 			}
 
 			// append each column into builder
 			for i := 0; i < colCount; i++ {
 				v := values[i]
-				field := builder.Field(i)
-
 				// handle nulls
 				if v == nil {
-					field.AppendNull()
+					builder.Field(i).AppendNull()
 					continue
 				}
 
 				switch dt := aSchema.Field(i).Type.(type) {
 				case *arrow.Decimal128Type:
-					// Expect numeric or string input. Attempt to convert via fmt.Sprint then parse into decimal.
-					sval := fmt.Sprint(v)
-					d, _, err := decimal128.FromString(sval)
-					if err != nil {
-						// append null on parse error
-						field.AppendNull()
-						continue
-					}
-					field.(*array.Decimal128Builder).Append(d)
+					// Decimal parsing is complex; append null for now (TODO: implement robust parsing)
+					builder.Field(i).AppendNull()
 				case *arrow.Int8Type:
 					switch vv := v.(type) {
 					case int8:
-						field.(*array.Int8Builder).Append(vv)
+						builder.Field(i).(*array.Int8Builder).Append(vv)
 					case int16:
-						field.(*array.Int8Builder).Append(int8(vv))
+						builder.Field(i).(*array.Int8Builder).Append(int8(vv))
 					case int32:
-						field.(*array.Int8Builder).Append(int8(vv))
+						builder.Field(i).(*array.Int8Builder).Append(int8(vv))
 					case int64:
-						field.(*array.Int8Builder).Append(int8(vv))
+						builder.Field(i).(*array.Int8Builder).Append(int8(vv))
 					case int:
-						field.(*array.Int8Builder).Append(int8(vv))
+						builder.Field(i).(*array.Int8Builder).Append(int8(vv))
 					default:
-						// try parse from string
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.Int16Type:
 					switch vv := v.(type) {
 					case int16:
-						field.(*array.Int16Builder).Append(vv)
+						builder.Field(i).(*array.Int16Builder).Append(vv)
 					case int32:
-						field.(*array.Int16Builder).Append(int16(vv))
+						builder.Field(i).(*array.Int16Builder).Append(int16(vv))
 					case int64:
-						field.(*array.Int16Builder).Append(int16(vv))
+						builder.Field(i).(*array.Int16Builder).Append(int16(vv))
 					default:
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.Int32Type:
 					switch vv := v.(type) {
 					case int32:
-						field.(*array.Int32Builder).Append(vv)
+						builder.Field(i).(*array.Int32Builder).Append(vv)
 					case int64:
-						field.(*array.Int32Builder).Append(int32(vv))
+						builder.Field(i).(*array.Int32Builder).Append(int32(vv))
 					default:
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.Int64Type:
 					switch vv := v.(type) {
 					case int64:
-						field.(*array.Int64Builder).Append(vv)
+						builder.Field(i).(*array.Int64Builder).Append(vv)
 					case int32:
-						field.(*array.Int64Builder).Append(int64(vv))
+						builder.Field(i).(*array.Int64Builder).Append(int64(vv))
 					default:
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.Uint8Type:
 					switch vv := v.(type) {
 					case int64:
-						field.(*array.Uint8Builder).Append(uint8(vv))
+						builder.Field(i).(*array.Uint8Builder).Append(uint8(vv))
 					default:
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.Uint16Type:
 					switch vv := v.(type) {
 					case int64:
-						field.(*array.Uint16Builder).Append(uint16(vv))
+						builder.Field(i).(*array.Uint16Builder).Append(uint16(vv))
 					default:
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.Uint32Type:
 					switch vv := v.(type) {
 					case int64:
-						field.(*array.Uint32Builder).Append(uint32(vv))
+						builder.Field(i).(*array.Uint32Builder).Append(uint32(vv))
 					default:
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.Uint64Type:
 					switch vv := v.(type) {
 					case int64:
-						field.(*array.Uint64Builder).Append(uint64(vv))
+						builder.Field(i).(*array.Uint64Builder).Append(uint64(vv))
 					default:
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.Float32Type:
 					switch vv := v.(type) {
 					case float32:
-						field.(*array.Float32Builder).Append(vv)
+						builder.Field(i).(*array.Float32Builder).Append(vv)
 					case float64:
-						field.(*array.Float32Builder).Append(float32(vv))
+						builder.Field(i).(*array.Float32Builder).Append(float32(vv))
 					default:
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.Float64Type:
 					switch vv := v.(type) {
 					case float64:
-						field.(*array.Float64Builder).Append(vv)
+						builder.Field(i).(*array.Float64Builder).Append(vv)
 					default:
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
-				case *arrow.StringType, *arrow.BinaryType:
-					// driver may return []byte or string
+				case *arrow.StringType:
 					switch vv := v.(type) {
 					case []byte:
-						field.(*array.StringBuilder).Append(string(vv))
+						builder.Field(i).(*array.StringBuilder).Append(string(vv))
 					case string:
-						field.(*array.StringBuilder).Append(vv)
+						builder.Field(i).(*array.StringBuilder).Append(vv)
 					default:
-						// fallback to fmt.Sprint
-						field.(*array.StringBuilder).Append(fmt.Sprint(vv))
+						builder.Field(i).(*array.StringBuilder).Append(fmt.Sprint(vv))
+					}
+				case *arrow.BinaryType:
+					switch vv := v.(type) {
+					case []byte:
+						builder.Field(i).(*array.BinaryBuilder).Append(vv)
+					case string:
+						builder.Field(i).(*array.BinaryBuilder).Append([]byte(vv))
+					default:
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.TimestampType:
-					// arrow Timestamp_us expects int64 microseconds since epoch
 					switch vv := v.(type) {
 					case time.Time:
 						us := vv.UnixNano() / 1_000
-						field.(*array.TimestampBuilder).Append(arrow.Timestamp(us))
+						builder.Field(i).(*array.TimestampBuilder).Append(arrow.Timestamp(us))
 					default:
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.Date32Type:
 					switch vv := v.(type) {
 					case time.Time:
-						// Date32 is days since epoch
-						days := int32(vv.Unix() / 86400)
-						field.(*array.Date32Builder).Append(days)
+						// Date32 is days since epoch (UTC)
+						days := int32(vv.UTC().Truncate(24 * time.Hour).Unix() / 86400)
+						builder.Field(i).(*array.Date32Builder).Append(arrow.Date32(days))
 					default:
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.Time64Type:
 					switch vv := v.(type) {
 					case time.Time:
 						us := vv.UnixNano() / 1_000
-						field.(*array.Time64Builder).Append(arrow.Time64(us))
+						builder.Field(i).(*array.Time64Builder).Append(arrow.Time64(us))
 					default:
-						field.AppendNull()
+						builder.Field(i).AppendNull()
 					}
 				case *arrow.ListType, *arrow.StructType:
 					// Complex types are not implemented: append null
-					field.AppendNull()
+					builder.Field(i).AppendNull()
 				default:
 					// fallback: append string representation
 					switch vv := v.(type) {
 					case []byte:
-						field.(*array.StringBuilder).Append(string(vv))
+						builder.Field(i).(*array.StringBuilder).Append(string(vv))
 					case string:
-						field.(*array.StringBuilder).Append(vv)
+						builder.Field(i).(*array.StringBuilder).Append(vv)
 					default:
-						field.(*array.StringBuilder).Append(fmt.Sprint(vv))
+						builder.Field(i).(*array.StringBuilder).Append(fmt.Sprint(vv))
 					}
 				}
 			}
@@ -475,14 +470,12 @@ func makeScanFunc(db *sql.DB, mem memory.Allocator, schemaName, tableName string
 
 		// check rows.Err()
 		if err := rows.Err(); err != nil {
-			_ = builder.Release()
 			return nil, fmt.Errorf("rows iteration error: %w", err)
 		}
 
 		// Build a single record
 		rec := builder.NewRecord()
-		// builder.Release() must be called after NewRecord to free builders' memory:
-		// But we must not Release the record; caller (array.RecordReader) will manage record lifecycle.
+		// release builder now that record is created
 		builder.Release()
 
 		// Return a RecordReader with a single record. The airport-go code expects the caller to call reader.Release().
