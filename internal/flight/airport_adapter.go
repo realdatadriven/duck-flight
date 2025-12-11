@@ -246,7 +246,7 @@ func mapDuckTypeToArrow(duck string) arrow.DataType {
 			fmt.Sscanf(duck, "DECIMAL(%d,%d)", &p, &s)
 		}
 		// create a Decimal128Type
-		if f := arrow.NewDecimal128Type(int(p), int(s)); f != nil {
+		if f, _ := arrow.NewDecimalType(arrow.DECIMAL256, 38, 6); f != nil {
 			return f
 		}
 		return arrow.BinaryTypes.String
@@ -292,7 +292,7 @@ func makeScanFunc(db *sql.DB, mem memory.Allocator, schemaName, tableName string
 		builder := array.NewRecordBuilder(mem, aSchema)
 		defer func() {
 			// ensure builder is released if the function exits before we return a RecordReader
-			_ = builder.Release()
+			//_ = builder.Release()
 		}()
 
 		colCount := len(cols)
@@ -316,7 +316,7 @@ func makeScanFunc(db *sql.DB, mem memory.Allocator, schemaName, tableName string
 					continue
 				}
 
-				switch dt := aSchema.Field(i).Type.(type) {
+				switch aSchema.Field(i).Type.(type) {
 				case *arrow.Decimal128Type:
 					// Decimal parsing is complex; append null for now (TODO: implement robust parsing)
 					builder.Field(i).AppendNull()
@@ -438,7 +438,7 @@ func makeScanFunc(db *sql.DB, mem memory.Allocator, schemaName, tableName string
 					switch vv := v.(type) {
 					case time.Time:
 						// Date32 is days since epoch (UTC)
-						days := int32(vv.UTC().Truncate(24 * time.Hour).Unix() / 86400)
+						days := int32(vv.UTC().Truncate(24*time.Hour).Unix() / 86400)
 						builder.Field(i).(*array.Date32Builder).Append(arrow.Date32(days))
 					default:
 						builder.Field(i).AppendNull()
@@ -474,11 +474,13 @@ func makeScanFunc(db *sql.DB, mem memory.Allocator, schemaName, tableName string
 		}
 
 		// Build a single record
-		rec := builder.NewRecord()
+		rec := builder.NewRecordBatch()
 		// release builder now that record is created
-		builder.Release()
+		//builder.Release()
 
 		// Return a RecordReader with a single record. The airport-go code expects the caller to call reader.Release().
-		return array.NewRecordReader(rec.Schema(), []arrow.Record{rec}), nil
+		//return array.NewRecordReader(rec.Schema(), []arrow.RecordBatch{rec}), nil
+		x := array.NewRecordReader(rec.Schema(), []arrow.RecordBatch{rec})
+		return x, nil
 	}
 }
