@@ -47,21 +47,19 @@ description: |
   and optional setup commands (INSTALL/LOAD) depending on the backend engine.
 
 schemas:
-  - name: schema_name
+  - name: test
     description: schema_description
-    version: 1
     before_sql: |
       INSTALL SQLITE;
       LOAD SQLITE;
     main_sql: |
-      ATTACH 'file_path' AS schema_name (TYPE SQLITE);
+      ATTACH 'database/test.db' AS test (TYPE SQLITE);
     after_sql: |
       USE memory;
-      DETACH schema_name;
+      DETACH test;
 
   - name: schema_name2
     description: schema_description2
-    version: 1
     before_sql: |
       INSTALL POSTGRES;
       LOAD POSTGRES;
@@ -72,11 +70,11 @@ schemas:
       DETACH schema_name2;
 ```
 
-This example assumes you have a **TPC-H SF=1** database exported to SQLite located at `./database/tpch.db`.
+This example assumes you have a **TPC-H SF=1** database exported to SQLite located at `./database/test.db`.
 
 When Duck-Flight starts:
 
-* This database will be attached as the schema `tpch`.
+* This database will be attached as the schema `test`.
 * All its tables will be discovered.
 * Their DuckDB types will be mapped to Arrow types.
 * They will be exposed in the Airport SQL catalog.
@@ -92,7 +90,7 @@ You need DuckDB installed with Arrow support and Go ≥1.25.
 ### 2. Create a TPC-H SQLite DB (example)
 
 ```bash
-duckdb tpch.duckdb -c "INSTALL tpch; LOAD tpch; CALL dbgen(sf=1); COPY (SELECT * FROM orders) TO 'database/tpch.db' (FORMAT SQLITE);"
+duckdb -c "INSTALL tpch; LOAD tpch; CALL dbgen(sf=1); ATTACH 'database/test.db' (TYPE SQLITE); COPY DATABASE memory TO test; DETACH test"
 ```
 
 (Alternatively, use any existing SQLite database.)
@@ -109,9 +107,9 @@ go run ./cmd/duckflight --config config.yaml
 INSTALL airport;
 LOAD airport;
 
-CREATE SECRET (TYPE airport, HOST '127.0.0.1', PORT 8088);
+ATTACH 'test' (TYPE airport, LOCATION '127.0.0.1:8088');
 
-SELECT * FROM tpch.orders LIMIT 10;
+SELECT * FROM test.orders LIMIT 10;
 ```
 
 You should receive Arrow batches streamed from Duck-Flight.
