@@ -9,5 +9,3 @@ require (
 	gopkg.in/yaml.v3 v3.1.0
 	google.golang.org/grpc v1.58.0
 )
-
-# replace github.com/hugr-lab/airport-go => github.com/hugr-lab/airport-go v0.0.0-00010101000000-000000000000
