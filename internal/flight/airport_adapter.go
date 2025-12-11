@@ -476,7 +476,7 @@ func makeScanFunc(db *sql.DB, mem memory.Allocator, schemaName, tableName string
 		// Build a single record
 		rec := builder.NewRecordBatch()
 		// release builder now that record is created
-		//builder.Release()
+		builder.Release()
 
 		// Return a RecordReader with a single record. The airport-go code expects the caller to call reader.Release().
 		//return array.NewRecordReader(rec.Schema(), []arrow.RecordBatch{rec}), nil
