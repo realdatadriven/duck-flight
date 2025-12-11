@@ -145,7 +145,9 @@ type columnMeta struct {
 
 // discoverTables uses DuckDB's information_schema to list tables and columns for a given schema.
 func discoverTables(db *sql.DB, schema string) ([]tableMeta, error) {
+	fmt.Println("discoverTables for schema:", schema)
 	q := `SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name`
+	q = `select table_name from duckdb_tables`
 	rows, err := db.Query(q, schema)
 	if err != nil {
 		return nil, fmt.Errorf("query tables: %w", err)
@@ -158,6 +160,7 @@ func discoverTables(db *sql.DB, schema string) ([]tableMeta, error) {
 		if err := rows.Scan(&tname); err != nil {
 			return nil, fmt.Errorf("scan table name: %w", err)
 		}
+		fmt.Println("TABLE:", tname)
 		cols, err := discoverColumns(db, schema, tname)
 		if err != nil {
 			return nil, fmt.Errorf("discover columns for %s.%s: %w", schema, tname, err)
@@ -175,10 +178,11 @@ func discoverTables(db *sql.DB, schema string) ([]tableMeta, error) {
 }
 
 func discoverColumns(db *sql.DB, schema, table string) ([]columnMeta, error) {
-	q := `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position`
-	rows, err := db.Query(q, schema, table)
+	q := `SELECT column_name, data_type FROM duckdb_columns WHERE /*schema_name = ? AND*/ table_name = ? ORDER BY numeric_precision`
+	//rows, err := db.Query(q, schema, table)
+	rows, err := db.Query(q, table)
 	if err != nil {
-		return nil, fmt.Errorf("query columns: %w", err)
+		return nil, fmt.Errorf("query columns: %s %w", schema, err)
 	}
 	defer rows.Close()
 
@@ -188,6 +192,7 @@ func discoverColumns(db *sql.DB, schema, table string) ([]columnMeta, error) {
 		if err := rows.Scan(&name, &dtype); err != nil {
 			return nil, fmt.Errorf("scan column: %w", err)
 		}
+		fmt.Println("  COLUMN:", name, dtype)
 		cols = append(cols, columnMeta{
 			Name:       name,
 			DuckDBType: strings.ToUpper(strings.TrimSpace(dtype)),

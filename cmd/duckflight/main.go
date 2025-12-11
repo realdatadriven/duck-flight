@@ -1,17 +1,16 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
-	"flag"
-	"context"
 
 	"github.com/realdatadriven/duck-flight/internal/config"
 	"github.com/realdatadriven/duck-flight/internal/duckmanager"
 	"github.com/realdatadriven/duck-flight/internal/flight"
-	"github.com/realdatadriven/duck-flight/internal/server"
 )
 
 func main() {
@@ -49,10 +48,10 @@ func main() {
 	flightMgr := flight.NewAirportAdapter(manager)
 
 	// Create and start server
-	srv := server.NewServer(addr, cfg, manager, flightMgr)
+	//srv := server.NewServer(addr, cfg, manager, flightMgr)
 
 	// Start the server (includes starting airport-go Flight server)
-	if err := srv.Start(); err != nil {
+	if err := flightMgr.Start(addr); err != nil {
 		log.Fatalf("server failed to start: %v", err)
 	}
 	log.Printf("server started at %s", addr)
@@ -64,7 +63,7 @@ func main() {
 
 	log.Print("shutting down...")
 	// give Flight manager a chance to stop
-	if err := srv.Stop(); err != nil {
+	if err := flightMgr.Stop(context.Background()); err != nil {
 		log.Printf("error during shutdown: %v", err)
 	}
 	// ensure manager shutdown (deferred previously) -- allow small wait

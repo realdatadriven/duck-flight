@@ -90,7 +90,7 @@ You need DuckDB installed with Arrow support and Go ≥1.25.
 ### 2. Create a TPC-H SQLite DB (example)
 
 ```bash
-duckdb -c "INSTALL tpch; LOAD tpch; CALL dbgen(sf=1); ATTACH 'database/test.db' (TYPE SQLITE); COPY DATABASE memory TO test; DETACH test"
+duckdb -c "INSTALL tpch; LOAD tpch; CALL dbgen(sf=1); ATTACH 'database/test.db' (TYPE SQLITE); COPY FROM DATABASE memory TO test; DETACH test"
 ```
 
 (Alternatively, use any existing SQLite database.)
@@ -98,7 +98,7 @@ duckdb -c "INSTALL tpch; LOAD tpch; CALL dbgen(sf=1); ATTACH 'database/test.db' 
 ### 3. Run Duck-Flight
 
 ```bash
-go run ./cmd/duckflight -tags="duckdb_arrow" --config config.yaml
+go run -tags="duckdb_arrow" ./cmd/duckflight --config examples/config.yaml
 ```
 
 ### 4. Connect from DuckDB

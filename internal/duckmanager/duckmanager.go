@@ -61,6 +61,7 @@ func (m *DuckManager) Startup() error {
 		if err := m.ExecMulti(s.BeforeSQL); err != nil {
 			return fmt.Errorf("before_sql failed for %s: %w", s.Name, err)
 		}
+		// fmt.Println("Executing main_sql for schema:", s.Name, s.MainSQL)
 		if err := m.ExecMulti(s.MainSQL); err != nil {
 			return fmt.Errorf("main_sql failed for %s: %w", s.Name, err)
 		}

@@ -1,0 +1,17 @@
+description: |
+  This YAML describes attachable database schemas for an Arrow Flight
+  server backed by DuckDB. Each schema block includes attach SQL, detach SQL,
+  and optional setup commands (INSTALL/LOAD) depending on the backend engine.
+
+schemas:
+  - name: test
+    description: schema_description
+    db_schema: main
+    before_sql: |
+      INSTALL SQLITE;
+      LOAD SQLITE;
+    main_sql: |
+      ATTACH 'database/test.db' AS test (TYPE SQLITE); USE test;
+    after_sql: |
+      USE memory;
+      DETACH test;
