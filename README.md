@@ -85,7 +85,7 @@ When Duck-Flight starts:
 
 ### 1. Install dependencies
 
-You need DuckDB installed with Arrow support and Go ≥1.25.
+You need DuckDB installed and Go ≥1.25.
 
 ### 2. Create a TPC-H SQLite DB (example)
 
