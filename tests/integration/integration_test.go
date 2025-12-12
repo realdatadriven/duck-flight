@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -15,8 +16,43 @@ func TestDuckFlightWithDuckDBCLI(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go binary not found in PATH")
 	}
+
+	// Install DuckDB if it doesn't exist
 	if _, err := exec.LookPath("duckdb"); err != nil {
-		t.Skip("duckdb binary not found in PATH; skipping integration test")
+		t.Logf("duckdb binary not found, attempting to install")
+		installCmd := exec.Command("bash", "-c", "curl https://install.duckdb.org | sh")
+		var out bytes.Buffer
+		installCmd.Stdout = &out
+		installCmd.Stderr = &out
+
+		if err := installCmd.Run(); err != nil {
+			t.Fatalf("failed to install duckdb: %v\noutput: %s", err, out.String())
+		}
+		t.Logf("DuckDB installed successfully")
+	}
+
+	// Create the TPC-H test database if it doesn't exist
+	dbPath := "database/test.db"
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		t.Logf("Database %s not found, creating with TPC-H data", dbPath)
+
+		// Ensure the directory exists
+		dbDir := filepath.Dir(dbPath)
+		if err := os.MkdirAll(dbDir, 0755); err != nil {
+			t.Fatalf("failed to create database directory: %v", err)
+		}
+
+		// Run DuckDB to generate TPC-H database
+		setupSQL := `INSTALL tpch; LOAD tpch; CALL dbgen(sf=1); ATTACH 'database/test.db' (TYPE SQLITE); COPY FROM DATABASE memory TO test; DETACH test`
+		setupCmd := exec.Command("duckdb", "-c", setupSQL)
+		var out bytes.Buffer
+		setupCmd.Stdout = &out
+		setupCmd.Stderr = &out
+
+		if err := setupCmd.Run(); err != nil {
+			t.Fatalf("failed to create TPC-H database: %v\noutput: %s", err, out.String())
+		}
+		t.Logf("TPC-H database created successfully")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -55,7 +91,7 @@ func TestDuckFlightWithDuckDBCLI(t *testing.T) {
 
 ready:
 	// Run the DuckDB CLI to exercise INSTALL/LOAD/ATTACH and a simple query
-	sql := `INSTALL airport; LOAD airport; ATTACH 'test' (TYPE airport, LOCATION '127.0.0.1:8088'); SELECT * FROM test.orders LIMIT 10;`
+	sql := `INSTALL airport FROM community; LOAD airport; ATTACH 'test' (TYPE AIRPORT, LOCATION 'grpc://127.0.0.1:50051'); SELECT * FROM test.orders LIMIT 10;`
 
 	var out bytes.Buffer
 	duck := exec.Command("duckdb", "-c", sql)

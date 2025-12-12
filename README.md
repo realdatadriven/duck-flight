@@ -104,10 +104,10 @@ go run -tags="duckdb_arrow" ./cmd/duckflight --config examples/config.yaml
 ### 4. Connect from DuckDB
 
 ```sql
-INSTALL airport;
+INSTALL airport FROM community;
 LOAD airport;
 
-ATTACH 'test' (TYPE airport, LOCATION '127.0.0.1:8088');
+ATTACH 'test' (TYPE AIRPORT, LOCATION 'grpc://127.0.0.1:50051');
 
 SELECT * FROM test.orders LIMIT 10;
 ```
