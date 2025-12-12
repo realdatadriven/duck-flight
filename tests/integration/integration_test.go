@@ -77,7 +77,7 @@ func TestDuckFlightWithDuckDBCLI(t *testing.T) {
 	}()
 
 	// Wait for the server to accept connections on 127.0.0.1:8088
-	addr := "127.0.0.1:8088"
+	addr := "grpc://127.0.0.1:50051"
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
