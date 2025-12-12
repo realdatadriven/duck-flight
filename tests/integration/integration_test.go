@@ -43,7 +43,7 @@ func TestDuckFlightWithDuckDBCLI(t *testing.T) {
 		}
 
 		// Run DuckDB to generate TPC-H database
-		setupSQL := `INSTALL tpch; LOAD tpch; CALL dbgen(sf=1); ATTACH 'database/test.db' (TYPE SQLITE); COPY FROM DATABASE memory TO test; DETACH test`
+		setupSQL := `INSTALL tpch; LOAD tpch; CALL dbgen(sf=0.1); ATTACH 'database/test.db' (TYPE SQLITE); COPY FROM DATABASE memory TO test; DETACH test`
 		setupCmd := exec.Command("duckdb", "-c", setupSQL)
 		var out bytes.Buffer
 		setupCmd.Stdout = &out
@@ -91,7 +91,7 @@ func TestDuckFlightWithDuckDBCLI(t *testing.T) {
 
 ready:
 	// Run the DuckDB CLI to exercise INSTALL/LOAD/ATTACH and a simple query
-	sql := `INSTALL airport FROM community; LOAD airport; ATTACH 'test' (TYPE AIRPORT, LOCATION 'grpc://127.0.0.1:50051'); SELECT * FROM test.orders LIMIT 10;`
+	sql := `INSTALL airport FROM community; LOAD airport; ATTACH '' AS my_server (TYPE AIRPORT, LOCATION 'grpc://127.0.0.1:50051'); SELECT * FROM my_server.my_schema.orders LIMIT 10;`
 
 	var out bytes.Buffer
 	duck := exec.Command("duckdb", "-c", sql)

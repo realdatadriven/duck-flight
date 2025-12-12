@@ -1,0 +1,10 @@
+root = "."
+testdata_dir = "testdata"
+tmp_dir = "tmp"
+
+[build]
+  args_bin = []
+  bin = "tmp/duck-flight.exe"
+  bin___ = "tmp/duck-flight.exe --config examples/config.yaml"
+  cmd = 'go build -tags="duckdb_arrow" -o ./tmp/duck-flight.exe ./cmd/duckflight'
+  delay = 1000

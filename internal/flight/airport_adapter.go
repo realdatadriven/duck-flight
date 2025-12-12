@@ -18,7 +18,7 @@ import (
 	"github.com/hugr-lab/airport-go/catalog"
 
 	"github.com/realdatadriven/duck-flight/internal/config"
-	"github.com/realdatadriven/duck-flight/internal/duckmanager"
+	"github.com/realdatadriven/duck-flight/internal/ddb"
 )
 
 // FlightManager is the interface the server uses to start/stop the FlightSQL server.
@@ -29,7 +29,7 @@ type FlightManager interface {
 
 // AirportAdapter implements FlightManager using hugr-lab/airport-go.
 type AirportAdapter struct {
-	manager   *duckmanager.DuckManager
+	manager   *ddb.DDB
 	grpcSrv   *grpc.Server
 	listener  net.Listener
 	mem       memory.Allocator
@@ -38,8 +38,8 @@ type AirportAdapter struct {
 	shutdownc chan struct{}
 }
 
-// NewAirportAdapter constructs the adapter with the provided DuckManager.
-func NewAirportAdapter(manager *duckmanager.DuckManager) *AirportAdapter {
+// NewAirportAdapter constructs the adapter with the provided DDB.
+func NewAirportAdapter(manager *ddb.DDB) *AirportAdapter {
 	return &AirportAdapter{
 		manager:   manager,
 		mem:       memory.DefaultAllocator,
@@ -69,14 +69,14 @@ func (a *AirportAdapter) Start(listenAddr string) error {
 
 		for _, t := range tables {
 			arrowSchema := buildArrowSchemaFromColumns(t.Columns)
-
+			// fmt.Println(schemaName, t.Name)
 			// create scan func closure capturing schema/table/columns
 			scanFn := makeScanFunc(a.manager.DB(), a.mem, schemaName, t.Name, arrowSchema, t.Columns)
 
 			// register simple table under current schema builder
 			sb.SimpleTable(airport.SimpleTableDef{
 				Name:     t.Name,
-				Comment:  "",
+				Comment:  t.Name,
 				Schema:   arrowSchema,
 				ScanFunc: scanFn,
 			})
@@ -88,7 +88,6 @@ func (a *AirportAdapter) Start(listenAddr string) error {
 		return fmt.Errorf("failed to build catalog: %w", err)
 	}
 	a.catalog = cat
-
 	// Create grpc server and register airport server
 	a.grpcSrv = grpc.NewServer()
 	if err := airport.NewServer(a.grpcSrv, airport.ServerConfig{
@@ -160,7 +159,7 @@ func discoverTables(db *sql.DB, schema string) ([]tableMeta, error) {
 		if err := rows.Scan(&tname); err != nil {
 			return nil, fmt.Errorf("scan table name: %w", err)
 		}
-		fmt.Println("TABLE:", tname)
+		// fmt.Println("TABLE:", tname)
 		cols, err := discoverColumns(db, schema, tname)
 		if err != nil {
 			return nil, fmt.Errorf("discover columns for %s.%s: %w", schema, tname, err)
@@ -192,7 +191,7 @@ func discoverColumns(db *sql.DB, schema, table string) ([]columnMeta, error) {
 		if err := rows.Scan(&name, &dtype); err != nil {
 			return nil, fmt.Errorf("scan column: %w", err)
 		}
-		fmt.Println("  COLUMN:", name, dtype)
+		// fmt.Println("  COLUMN:", name, dtype)
 		cols = append(cols, columnMeta{
 			Name:       name,
 			DuckDBType: strings.ToUpper(strings.TrimSpace(dtype)),
@@ -286,7 +285,7 @@ func makeScanFunc(db *sql.DB, mem memory.Allocator, schemaName, tableName string
 		if opts != nil && opts.Limit > 0 {
 			query = fmt.Sprintf("%s LIMIT %d", query, opts.Limit)
 		}
-
+		fmt.Println(query)
 		rows, err := db.QueryContext(ctx, query)
 		if err != nil {
 			return nil, fmt.Errorf("query %s: %w", query, err)

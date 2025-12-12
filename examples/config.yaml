@@ -4,14 +4,14 @@ description: |
   and optional setup commands (INSTALL/LOAD) depending on the backend engine.
 
 schemas:
-  - name: test
+  - name: my_schema
     description: schema_description
     db_schema: main
     before_sql: |
       INSTALL SQLITE;
       LOAD SQLITE;
     main_sql: |
-      ATTACH 'database/test.db' AS test (TYPE SQLITE); USE test;
+      ATTACH 'database/test.db' AS my_schema (TYPE SQLITE); USE my_schema;
     after_sql: |
       USE memory;
-      DETACH test;
+      DETACH my_schema;

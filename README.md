@@ -47,16 +47,17 @@ description: |
   and optional setup commands (INSTALL/LOAD) depending on the backend engine.
 
 schemas:
-  - name: test
+  - name: my_schema
     description: schema_description
+    db_schema: main
     before_sql: |
       INSTALL SQLITE;
       LOAD SQLITE;
     main_sql: |
-      ATTACH 'database/test.db' AS test (TYPE SQLITE);
+      ATTACH 'database/test.db' AS my_schema (TYPE SQLITE); USE my_schema;
     after_sql: |
       USE memory;
-      DETACH test;
+      DETACH my_schema;
 
   - name: schema_name2
     description: schema_description2
@@ -107,9 +108,9 @@ go run -tags="duckdb_arrow" ./cmd/duckflight --config examples/config.yaml
 INSTALL airport FROM community;
 LOAD airport;
 
-ATTACH 'test' (TYPE AIRPORT, LOCATION 'grpc://127.0.0.1:50051');
+ATTACH '' AS my_server (TYPE AIRPORT, LOCATION 'grpc://127.0.0.1:50051');
 
-SELECT * FROM test.orders LIMIT 10;
+SELECT * FROM my_server.my_schema.orders LIMIT 10;
 ```
 
 You should receive Arrow batches streamed from Duck-Flight.

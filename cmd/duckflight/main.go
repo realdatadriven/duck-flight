@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"github.com/realdatadriven/duck-flight/internal/config"
-	"github.com/realdatadriven/duck-flight/internal/duckmanager"
+	"github.com/realdatadriven/duck-flight/internal/ddb"
 	"github.com/realdatadriven/duck-flight/internal/flight"
 )
 
@@ -17,7 +17,7 @@ func main() {
 	var cfgPath string
 	var addr string
 
-	flag.StringVar(&cfgPath, "config", "configs/config.yaml", "Path to YAML configuration")
+	flag.StringVar(&cfgPath, "config", "examples/config.yaml", "Path to YAML configuration")
 	flag.StringVar(&addr, "addr", "127.0.0.1:50051", "Address to bind the server (gRPC)")
 	flag.Parse()
 
@@ -27,20 +27,20 @@ func main() {
 	}
 	log.Printf("loaded config: %s", cfg.Description)
 
-	// Create DuckManager which manages the DuckDB instance and lifecycle SQL
-	manager, err := duckmanager.NewDuckManager(cfg)
+	// Create DDB which manages the DuckDB instance and lifecycle SQL
+	manager, err := ddb.NewDDB(cfg)
 	if err != nil {
-		log.Fatalf("failed to initialize DuckManager: %v", err)
+		log.Fatalf("failed to initialize DDB: %v", err)
 	}
 
 	// Run startup lifecycle (before_sql + main_sql)
 	if err := manager.Startup(); err != nil {
-		log.Fatalf("duckmanager startup failed: %v", err)
+		log.Fatalf("ddb startup failed: %v", err)
 	}
 	// Ensure teardown on exit
 	defer func() {
 		if err := manager.Shutdown(); err != nil {
-			log.Printf("duckmanager shutdown error: %v", err)
+			log.Printf("ddb shutdown error: %v", err)
 		}
 	}()
 

@@ -1,4 +1,4 @@
-package duckmanager
+package ddb
 
 import (
 	"database/sql"
@@ -12,15 +12,15 @@ import (
 	"github.com/realdatadriven/duck-flight/internal/config"
 )
 
-// DuckManager manages a single DuckDB instance and executes lifecycle SQL for each schema
-type DuckManager struct {
+// DDB manages a single DuckDB instance and executes lifecycle SQL for each schema
+type DDB struct {
 	db  *sql.DB
 	cfg *config.ServerConfig
 }
 
-// NewDuckManager opens an in-memory DuckDB instance (or file-backed if you provide DSN in cfg later).
+// NewDDB opens an in-memory DuckDB instance (or file-backed if you provide DSN in cfg later).
 // For now it opens an in-memory DB (empty DSN).
-func NewDuckManager(cfg *config.ServerConfig) (*DuckManager, error) {
+func NewDDB(cfg *config.ServerConfig) (*DDB, error) {
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
 		return nil, err
@@ -32,11 +32,11 @@ func NewDuckManager(cfg *config.ServerConfig) (*DuckManager, error) {
 		return nil, err
 	}
 
-	return &DuckManager{db: db, cfg: cfg}, nil
+	return &DDB{db: db, cfg: cfg}, nil
 }
 
 // ExecMulti executes semicolon separated SQL statements in sequence
-func (m *DuckManager) ExecMulti(raw string) error {
+func (m *DDB) ExecMulti(raw string) error {
 	if strings.TrimSpace(raw) == "" {
 		return nil
 	}
@@ -55,7 +55,7 @@ func (m *DuckManager) ExecMulti(raw string) error {
 }
 
 // Startup runs before_sql and main_sql for every schema
-func (m *DuckManager) Startup() error {
+func (m *DDB) Startup() error {
 	for _, s := range m.cfg.Schemas {
 		log.Printf("[duckmanager] setting up schema: %s", s.Name)
 		if err := m.ExecMulti(s.BeforeSQL); err != nil {
@@ -70,7 +70,7 @@ func (m *DuckManager) Startup() error {
 }
 
 // Shutdown runs after_sql for every schema and closes the DB
-func (m *DuckManager) Shutdown() error {
+func (m *DDB) Shutdown() error {
 	for _, s := range m.cfg.Schemas {
 		log.Printf("[duckmanager] tearing down schema: %s", s.Name)
 		if err := m.ExecMulti(s.AfterSQL); err != nil {
@@ -85,7 +85,7 @@ func (m *DuckManager) Shutdown() error {
 }
 
 // DB returns the underlying *sql.DB for advanced usage (discovery, queries)
-func (m *DuckManager) DB() *sql.DB { return m.db }
+func (m *DDB) DB() *sql.DB { return m.db }
 
 // Config exposes the loaded ServerConfig (schemas etc).
-func (m *DuckManager) Config() *config.ServerConfig { return m.cfg }
+func (m *DDB) Config() *config.ServerConfig { return m.cfg }
