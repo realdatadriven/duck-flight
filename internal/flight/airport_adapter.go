@@ -19,6 +19,7 @@ import (
 
 	"github.com/realdatadriven/duck-flight/internal/config"
 	"github.com/realdatadriven/duck-flight/internal/ddb"
+	//duckarrow "github.com/duckdb/duckdb-go/v2/arrow"
 )
 
 // FlightManager is the interface the server uses to start/stop the FlightSQL server.
@@ -202,6 +203,23 @@ func discoverColumns(db *sql.DB, schema, table string) ([]columnMeta, error) {
 	}
 	return cols, nil
 }
+
+/*func discoverColumns2(db *sql.DB, schema, table string) (arrow.Schema, error) {
+	q := fmt.Sprintf(`SELECT * FROM "%s" LIMIT 0`, table)
+	var schem arrow.Schema
+	sqlConn, err := db.Conn(context.Background())
+	if err != nil {
+		return schem, err
+	}
+	rawConn := sqlConn.Raw(func(driverConn any) error {
+		conn := driverConn.(*duckdb.Conn)
+		arrow, _ := duckdb.NewArrowFromConn(conn)
+		rdr, _ := arrow.QueryContext(context.Background(), q)
+		rdr.Schema()
+		return nil
+	})
+	return schem, nil
+}*/
 
 // buildArrowSchemaFromColumns converts discovered columns into an arrow.Schema following provided mapping.
 func buildArrowSchemaFromColumns(cols []columnMeta) *arrow.Schema {

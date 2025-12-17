@@ -89,3 +89,106 @@ func (m *DDB) DB() *sql.DB { return m.db }
 
 // Config exposes the loaded ServerConfig (schemas etc).
 func (m *DDB) Config() *config.ServerConfig { return m.cfg }
+
+/*package ddb
+
+import (
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"fmt"
+	"log"
+	"strings"
+
+	// duckdb driver registers itself with database/sql
+	"github.com/duckdb/duckdb-go/v2"
+
+	"github.com/realdatadriven/duck-flight/internal/config"
+)
+
+// DDB manages a single DuckDB instance and executes lifecycle SQL for each schema
+type DDB struct {
+	db  *duckdb.Connector
+	cfg *config.ServerConfig
+}
+
+// NewDDB opens an in-memory DuckDB instance (or file-backed if you provide DSN in cfg later).
+// For now it opens an in-memory DB (empty DSN).
+func NewDDB(cfg *config.ServerConfig) (*DDB, error) {
+	// Obtain a DuckDB connector
+    db, err := duckdb.NewConnector("", nil)
+    if err != nil {
+        return nil, err
+    }
+    defer db.Close()
+
+	// sanity ping
+	if _, err := db.Connect(context.Background()); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	return &DDB{db: db, cfg: cfg}, nil
+}
+
+// ExecMulti executes semicolon separated SQL statements in sequence
+func (m *DDB) ExecMulti(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	// Open a native DuckDB connection
+    conn, err := m.db.Connect(context.Background())
+    if err != nil {
+        return err
+    }
+    defer conn.Close()
+	// naive split by semicolon -- this is fine for simple DDL/DML snippets.
+	parts := strings.Split(raw, ";")
+	for _, p := range parts {
+		stmt := strings.TrimSpace(p)
+		if stmt == "" {
+			continue
+		}
+		if _, err := conn.Exec(stmt); err != nil {
+			return fmt.Errorf("exec failed for statement '%s': %w", stmt, err)
+		}
+	}
+	return nil
+}
+
+// Startup runs before_sql and main_sql for every schema
+func (m *DDB) Startup() error {
+	for _, s := range m.cfg.Schemas {
+		log.Printf("[duckmanager] setting up schema: %s", s.Name)
+		if err := m.ExecMulti(s.BeforeSQL); err != nil {
+			return fmt.Errorf("before_sql failed for %s: %w", s.Name, err)
+		}
+		// fmt.Println("Executing main_sql for schema:", s.Name, s.MainSQL)
+		if err := m.ExecMulti(s.MainSQL); err != nil {
+			return fmt.Errorf("main_sql failed for %s: %w", s.Name, err)
+		}
+	}
+	return nil
+}
+
+// Shutdown runs after_sql for every schema and closes the DB
+func (m *DDB) Shutdown() error {
+	for _, s := range m.cfg.Schemas {
+		log.Printf("[duckmanager] tearing down schema: %s", s.Name)
+		if err := m.ExecMulti(s.AfterSQL); err != nil {
+			log.Printf("warning: after_sql failed for %s: %v", s.Name, err)
+			// continue executing other teardowns
+		}
+	}
+	if err := m.db.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DB returns the underlying *sql.DB for advanced usage (discovery, queries)
+func (m *DDB) DB() *duckdb.Connector { return m.db }
+
+// Config exposes the loaded ServerConfig (schemas etc).
+func (m *DDB) Config() *config.ServerConfig { return m.cfg }
+*/
